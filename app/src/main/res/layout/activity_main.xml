@@ -5,9 +5,54 @@
     android:layout_height="match_parent"
     tools:context=".MainActivity">
 
-    <WebView
-        android:id="@+id/transitWebView"
+    <!-- Wrapper layout container ensuring elements stack vertically smoothly -->
+    <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="match_parent" />
+        android:layout_height="match_parent"
+        android:orientation="vertical">
 
+        <!-- Core web dashboard filling all available screen spacing -->
+        <WebView
+            android:id="@+id/transitWebView"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1" />
+
+        <!-- Master Telemetry Log Group (Hidden dynamically via Java menu action) -->
+        <LinearLayout
+            android:id="@+id/logContainer"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="10dp"
+            android:background="#121212">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="System Raw Log:"
+                android:textColor="#aaaaaa"
+                android:textStyle="bold"
+                android:textSize="12sp"
+                android:paddingBottom="4dp"/>
+
+            <FrameLayout
+                android:layout_width="match_parent"
+                android:layout_height="120dp">
+
+                <!-- This matches the exact ID your internal HTML code injects into -->
+                <WebView
+                    android:id="@+id/debugWebViewPlaceholder"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:visibility="gone"
+                    tools:visibility="gone" />
+
+                <!-- Fallback view container link matching your underlying structural elements -->
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent" />
+            </FrameLayout>
+        </LinearLayout>
+    </LinearLayout>
 </RelativeLayout>
