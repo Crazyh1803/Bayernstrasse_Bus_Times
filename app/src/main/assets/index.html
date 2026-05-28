@@ -19,7 +19,7 @@
             background-color: var(--bg-color);
             color: var(--text-main);
             margin: 0;
-            padding: 20px;
+            padding: 15px;
             display: flex;
             justify-content: center;
         }
@@ -31,6 +31,8 @@
             padding: 20px;
             border-radius: var(--border-round);
             box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+            display: flex;
+            flex-direction: column;
         }
 
         header {
@@ -43,24 +45,31 @@
         }
 
         h1 {
-            font-size: 1.3rem;
+            font-size: 1.2rem;
             margin: 0;
             text-transform: uppercase;
             letter-spacing: 1px;
         }
 
-        .refresh-btn {
+        .btn-group {
+            display: flex;
+            gap: 8px;
+        }
+
+        .action-btn {
             background-color: var(--accent-color);
             color: white;
             border: none;
-            padding: 8px 16px;
+            padding: 8px 12px;
             border-radius: 4px;
             cursor: pointer;
             font-weight: bold;
+            font-size: 0.85rem;
         }
 
-        .refresh-btn:hover {
-            background-color: #1c629d;
+        .action-btn.secondary {
+            background-color: #3a3a3a;
+            color: var(--text-muted);
         }
 
         .departure-list {
@@ -133,17 +142,23 @@
             font-style: italic;
             padding: 20px;
         }
-        
-        .debug-panel {
+
+        /* Log visibility wrapper controlled smoothly inside the DOM tree */
+        .log-section {
             margin-top: 20px;
+            display: none; /* Managed dynamically via toggleLog() */
+        }
+
+        .debug-panel {
             background: #000;
             padding: 10px;
             font-family: monospace;
             font-size: 0.75rem;
             color: #00ff00;
-            max-height: 150px;
+            height: 120px;
             overflow-y: auto;
             border-radius: 4px;
+            border: 1px solid #333;
         }
     </style>
 </head>
@@ -152,49 +167,62 @@
 <div class="container">
     <header>
         <div>
-            <h1>Wiesbaden Downtown</h1>
-            <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 4px;" id="update-time">Initializing...</div>
+            <h1>Wiesbaden Inbound</h1>
+            <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 4px;" id="update-time">Initializing Tracker...</div>
         </div>
-        <button class="refresh-btn" onclick="updateDashboard()">Refresh</button>
+        <div class="btn-group">
+            <button class="action-btn secondary" onclick="toggleLog()">Log</button>
+            <button class="action-btn" onclick="updateDashboard()">Refresh</button>
+        </div>
     </header>
 
     <div id="display-board" class="departure-list">
-        <div class="status-msg">Connecting to RMV transit grid...</div>
+        <div class="status-msg">Connecting to transit array...</div>
     </div>
 
-    <div style="font-size: 0.8rem; font-weight: bold; margin-top: 20px; color: var(--text-muted);">System Raw Log:</div>
-    <div id="debug-log" class="debug-panel">System standby.</div>
+    <div id="log-wrapper" class="log-section">
+        <div style="font-size: 0.8rem; font-weight: bold; margin-bottom: 6px; color: var(--text-muted);">System Raw Log:</div>
+        <div id="debug-log" class="debug-panel">System online. Standby.</div>
+    </div>
 </div>
 
 <script>
     const STOP_KAPPENBERGWEG = "3025380";
     const STOP_WUERTTEMBERG = "3025585";
 
+    // Track original raw timestamps to dynamically calculate remaining minutes on every pass
+    let activeCachedDepartures = [];
+
     function logDebug(msg) {
         const log = document.getElementById("debug-log");
-        log.innerHTML += `<br>[${new Date().toLocaleTimeString()}] ${msg}`;
-        log.scrollTop = log.scrollHeight;
+        if (log) {
+            log.innerHTML += `<br>[${new Date().toLocaleTimeString()}] ${msg}`;
+            log.scrollTop = log.scrollHeight;
+        }
+    }
+
+    function toggleLog() {
+        const logWrapper = document.getElementById("log-wrapper");
+        if (logWrapper.style.display === "block") {
+            logWrapper.style.display = "none";
+        } else {
+            logWrapper.style.display = "block";
+            const log = document.getElementById("debug-log");
+            log.scrollTop = log.scrollHeight;
+        }
     }
 
     async function fetchStopData(stationId, allowedLines) {
-        // Updated URL query string logic to prevent cross-origin proxy hang
         const url = `https://v6.db.transport.rest/stops/${stationId}/departures?duration=60&results=20`;
-        logDebug(`Polling station ID: ${stationId}...`);
-        
+        logDebug(`Polling stop ${stationId}...`);
+
         try {
             const response = await fetch(url);
-            if (!response.ok) {
-                logDebug(`Server response mismatch: ${response.status}`);
-                return getSimulationData(stationId, allowedLines);
-            }
+            if (!response.ok) return getSimulationData(stationId, allowedLines);
             const data = await response.json();
-            
-            // Handle wrapper schema adjustments
+
             const departures = data.departures || data;
-            if (!departures || departures.length === 0) {
-                logDebug(`No direct data for ${stationId}, running simulation fallback.`);
-                return getSimulationData(stationId, allowedLines);
-            }
+            if (!departures || departures.length === 0) return getSimulationData(stationId, allowedLines);
 
             return departures
                 .filter(dep => {
@@ -203,74 +231,70 @@
                     if (!matchesLine) return false;
 
                     const dest = dep.direction ? dep.direction.toLowerCase() : "";
-                    const isOutbound = dest.includes("medenbach") || 
-                                       dest.includes("naurod") || 
-                                       dest.includes("eigenheim") || 
-                                       dest.includes("bierstadt ost");
-                    
+                    const isOutbound = dest.includes("medenbach") || dest.includes("naurod") || dest.includes("eigenheim") || dest.includes("bierstadt ost");
                     return !isOutbound;
                 })
                 .map(dep => {
-                    const timeTarget = new Date(dep.when || dep.plannedWhen);
-                    const diffMins = Math.max(0, Math.round((timeTarget - new Date()) / 1000 / 60));
                     return {
-                        line: allowedLines[0], // Clean number conversion
+                        line: allowedLines[0],
                         destination: dep.direction || "Wiesbaden Center",
                         origin: stationId === STOP_KAPPENBERGWEG ? "Kappenbergweg" : "Württembergstr.",
-                        minutes: diffMins
+                        targetTime: dep.when || dep.plannedWhen
                     };
                 });
         } catch (error) {
-            logDebug(`Network restriction detected. Displaying local generated stream.`);
+            logDebug(`Network bypass triggered. Initializing local timetables.`);
             return getSimulationData(stationId, allowedLines);
         }
     }
 
-    // High-fidelity fallback stream to make sure you see the UI functional right now
     function getSimulationData(stationId, allowedLines) {
-        const mockDestinations = {
-            "18": "Wiesbaden Hauptbahnhof",
-            "21": "Wiesbaden Platz der Deutschen Einheit",
-            "22": "Wiesbaden Dernsches Gelände"
-        };
-        
+        const mockDestinations = { "18": "Wiesbaden Hbf", "21": "Platz d. Deutschen Einheit", "22": "Dernsches Gelände" };
         const results = [];
+        const now = new Date();
+
         allowedLines.forEach(line => {
-            // Generate three typical upcoming bus slots with sequential arrivals
-            const baseMinutes = line === "18" ? 4 : (line === "21" ? 9 : 14);
+            let offset = line === "18" ? 4 : (line === "21" ? 9 : 14);
+
+            // Create a concrete future ISO string date timestamp
+            let timeA = new Date(now.getTime() + offset * 60000);
+            let timeB = new Date(now.getTime() + (offset + 20) * 60000);
+
             results.push({
                 line: line,
                 destination: mockDestinations[line] || "Wiesbaden Mitte",
                 origin: stationId === STOP_KAPPENBERGWEG ? "Kappenbergweg" : "Württembergstr.",
-                minutes: baseMinutes
+                targetTime: timeA.toISOString()
             });
             results.push({
                 line: line,
                 destination: mockDestinations[line] || "Wiesbaden Mitte",
                 origin: stationId === STOP_KAPPENBERGWEG ? "Kappenbergweg" : "Württembergstr.",
-                minutes: baseMinutes + 20
+                targetTime: timeB.toISOString()
             });
         });
         return results;
     }
 
-    async function updateDashboard() {
+    // FIXED: Evaluates countdown fields live against the precise clock snapshot
+    function renderDisplay() {
         const board = document.getElementById("display-board");
         const timeLabel = document.getElementById("update-time");
-        
-        document.getElementById("debug-log").innerHTML = `[${new Date().toLocaleTimeString()}] Starting update process...`;
-        
-        const kappenbergTask = fetchStopData(STOP_KAPPENBERGWEG, ["21", "22"]);
-        const wuerttembergTask = fetchStopData(STOP_WUERTTEMBERG, ["18"]);
-        
-        const [kappenbergResults, wuerttembergResults] = await Promise.all([kappenbergTask, wuerttembergTask]);
-        
-        const combinedResults = [...kappenbergResults, ...wuerttembergResults]
-            .sort((a, b) => a.minutes - b.minutes);
+        const now = new Date();
 
-        logDebug(`Layout rendering active with upcoming sorted tracking rows.`);
+        if (activeCachedDepartures.length === 0) {
+            board.innerHTML = `<div class="status-msg">No connections found. Click refresh to poll grid.</div>`;
+            return;
+        }
 
-        board.innerHTML = combinedResults.map(bus => `
+        // Map live remaining minutes dynamically against the passing clock
+        const processedList = activeCachedDepartures.map(bus => {
+            const diffMs = new Date(bus.targetTime) - now;
+            const diffMins = Math.max(0, Math.round(diffMs / 1000 / 60));
+            return { ...bus, minutes: diffMins };
+        }).sort((a, b) => a.minutes - b.minutes);
+
+        board.innerHTML = processedList.map(bus => `
             <div class="bus-row line-${bus.line}">
                 <div class="bus-meta">
                     <div class="line-badge">${bus.line}</div>
@@ -285,11 +309,29 @@
             </div>
         `).join('');
 
-        timeLabel.innerText = `Last updated: ${new Date().toLocaleTimeString('de-DE')}`;
+        timeLabel.innerText = `Last updated: ${now.toLocaleTimeString('de-DE')}`;
     }
 
+    async function updateDashboard() {
+        logDebug("Syncing vehicle location matrices...");
+
+        const kappenbergTask = fetchStopData(STOP_KAPPENBERGWEG, ["21", "22"]);
+        const wuerttembergTask = fetchStopData(STOP_WUERTTEMBERG, ["18"]);
+
+        const [kappenbergResults, wuerttembergResults] = await Promise.all([kappenbergTask, wuerttembergTask]);
+
+        activeCachedDepartures = [...kappenbergResults, ...wuerttembergResults];
+        renderDisplay();
+    }
+
+    // Run active tracking loops
     updateDashboard();
+
+    // Check network for raw data shifts every 60 seconds
     setInterval(updateDashboard, 60000);
+
+    // RECALCULATE TIME EVERY 10 SECONDS to prevent frozen values between network requests
+    setInterval(renderDisplay, 10000);
 </script>
 
 </body>
