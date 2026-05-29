@@ -1,196 +1,14 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Wiesbaden Downtown Transit Monitor</title>
-    <style>
-        :root {
-            --bg-color: #121212;
-            --card-bg: #1e1e1e;
-            --text-main: #ffffff;
-            --text-muted: #aaaaaa;
-            --accent-color: #2b82c9;
-            --border-round: 8px;
-        }
-
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
-            background-color: var(--bg-color);
-            color: var(--text-main);
-            margin: 0;
-            padding: 15px;
-            display: flex;
-            justify-content: center;
-        }
-
-        .container {
-            width: 100%;
-            max-width: 500px;
-            background: var(--card-bg);
-            padding: 20px;
-            border-radius: var(--border-round);
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
-            display: flex;
-            flex-direction: column;
-        }
-
-        header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            border-bottom: 2px solid #333333;
-            padding-bottom: 15px;
-            margin-bottom: 20px;
-        }
-
-        h1 {
-            font-size: 1.2rem;
-            margin: 0;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-        }
-
-        .btn-group {
-            display: flex;
-            gap: 8px;
-        }
-
-        .action-btn {
-            background-color: var(--accent-color);
-            color: white;
-            border: none;
-            padding: 8px 12px;
-            border-radius: 4px;
-            cursor: pointer;
-            font-weight: bold;
-            font-size: 0.85rem;
-        }
-
-        .action-btn.secondary {
-            background-color: #3a3a3a;
-            color: var(--text-muted);
-        }
-
-        .departure-list {
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-        }
-
-        .bus-row {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 12px;
-            background: #252525;
-            border-radius: 4px;
-            border-left: 4px solid #555555;
-        }
-
-        .bus-row.line-18 { border-left-color: #e67e22; }
-        .bus-row.line-21 { border-left-color: #2ce3b7; }
-        .bus-row.line-22 { border-left-color: #2ecc71; }
-
-        .bus-meta {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-        }
-
-        .line-badge {
-            font-weight: bold;
-            padding: 4px 8px;
-            border-radius: 3px;
-            font-size: 1rem;
-            min-width: 25px;
-            text-align: center;
-            background: #3a3a3a;
-            color: #fff;
-        }
-
-        .line-18 .line-badge { background-color: #e67e22; }
-        .line-21 .line-badge { background-color: #2ce3b7; color: #000; }
-        .line-22 .line-badge { background-color: #2ecc71; }
-
-        .route-info {
-            display: flex;
-            flex-direction: column;
-        }
-
-        .destination {
-            font-weight: bold;
-            font-size: 0.95rem;
-        }
-
-        .origin-stop {
-            font-size: 0.75rem;
-            color: var(--text-muted);
-            margin-top: 2px;
-        }
-
-        .time-info {
-            text-align: right;
-            font-weight: bold;
-            font-size: 1.1rem;
-            color: #ffcc00;
-        }
-
-        .status-msg {
-            text-align: center;
-            color: var(--text-muted);
-            font-style: italic;
-            padding: 20px;
-        }
-        
-        .log-section {
-            margin-top: 20px;
-            display: none;
-        }
-
-        .debug-panel {
-            background: #000;
-            padding: 10px;
-            font-family: monospace;
-            font-size: 0.75rem;
-            color: #00ff00;
-            height: 120px;
-            overflow-y: auto;
-            border-radius: 4px;
-            border: 1px solid #333;
-        }
-    </style>
-</head>
-<body>
-
-<div class="container">
-    <header>
-        <div>
-            <h1>Wiesbaden Inbound</h1>
-            <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 4px;" id="update-time">Initializing Tracker...</div>
-        </div>
-        <div class="btn-group">
-            <button class="action-btn secondary" onclick="toggleLog()">Log</button>
-            <button class="action-btn" onclick="updateDashboard()">Refresh</button>
-        </div>
-    </header>
-
-    <div id="display-board" class="departure-list">
-        <div class="status-msg">Connecting to transit array...</div>
-    </div>
-
-    <div id="log-wrapper" class="log-section">
-        <div style="font-size: 0.8rem; font-weight: bold; margin-bottom: 6px; color: var(--text-muted);">System Raw Log:</div>
-        <div id="debug-log" class="debug-panel">System online. Standby.</div>
-    </div>
-</div>
-
 <script>
-    // Station IDs mapped specifically to the national OpenStreetMap index
-    const STOP_KAPPENBERGWEG = "de:06414:5380"; 
-    const STOP_WUERTTEMBERG = "de:06414:5585";
+    // Official RMV Station IDs for your exact stops
+    const STOP_KAPPENBERGWEG = "3025380";
+    const STOP_WUERTTEMBERG = "3025585";
+    
+    // Your freshly minted developer credentials
+    const RMV_API_KEY = "fc28a2e4-e61b-48f6-a27f-a9888cf1c8ce";
 
     let activeCachedDepartures = [];
+    let kappenbergRaw = null;
+    let wuerttembergRaw = null;
 
     function logDebug(msg) {
         const log = document.getElementById("debug-log");
@@ -202,69 +20,88 @@
 
     function toggleLog() {
         const logWrapper = document.getElementById("log-wrapper");
-        if (logWrapper.style.display === "block") {
-            logWrapper.style.display = "none";
-        } else {
-            logWrapper.style.display = "block";
-            const log = document.getElementById("debug-log");
-            log.scrollTop = log.scrollHeight;
+        logWrapper.style.display = (logWrapper.style.display === "block") ? "none" : "block";
+    }
+
+    // Triggered by Java passing the raw RMV JSON payload down to the web view canvas
+    window.onNativeDataReceived = function(stationId, base64Data) {
+        try {
+            const decodedJson = atob(base64Data);
+            if (decodedJson.startsWith("ERROR:")) {
+                logDebug(`RMV Bridge Link Fault: ${decodedJson}`);
+                processParsedData(stationId, getSimulationData(stationId, stationId === STOP_KAPPENBERGWEG ? ["21", "22"] : ["18"]));
+                return;
+            }
+
+            const data = JSON.parse(decodedJson);
+            
+            // RMV HAFAS structures its departures array under the "Departure" object key
+            if (!data.Departure || data.Departure.length === 0) {
+                logDebug(`No active runs returned from RMV for stop ${stationId}`);
+                processParsedData(stationId, []);
+                return;
+            }
+
+            const allowedLines = stationId === STOP_KAPPENBERGWEG ? ["21", "22"] : ["18"];
+            
+            const parsed = data.Departure
+                .filter(dep => {
+                    // Extract line string (e.g., "Bus 21" or "21")
+                    let lineName = (dep.Product && dep.Product.number) ? dep.Product.number : "";
+                    const matchesLine = allowedLines.some(l => lineName.trim() === l);
+                    if (!matchesLine) return false;
+
+                    // Filter out outbound routes heading away from downtown
+                    const dest = dep.direction ? dep.direction.toLowerCase() : "";
+                    return !(dest.includes("medenbach") || dest.includes("naurod") || dest.includes("eigenheim") || dest.includes("bierstadt ost"));
+                })
+                .map(dep => {
+                    // RMV specific feature: If a bus is delayed, 'rtTime' contains the live GPS update.
+                    // Otherwise, we gracefully fall back to the scheduled base 'time'.
+                    const targetDate = dep.rtDate ? dep.rtDate : dep.date;
+                    const targetTime = dep.rtTime ? dep.rtTime : dep.time;
+                    
+                    // Format into a clean ISO-compliant parsing string (YYYY-MM-DDTHH:MM:SS)
+                    const isoTimestamp = `${targetDate}T${targetTime}`;
+
+                    return {
+                        line: dep.Product.number.trim(),
+                        destination: dep.direction || "Wiesbaden Center",
+                        origin: stationId === STOP_KAPPENBERGWEG ? "Kappenbergweg" : "Württembergstr.",
+                        targetTime: isoTimestamp
+                    };
+                });
+
+            logDebug(`Successfully parsed ${parsed.length} live routes for stop ${stationId}`);
+            processParsedData(stationId, parsed);
+        } catch (err) {
+            logDebug(`RMV Parser Exception: ${err.message}`);
+        }
+    };
+
+    function processParsedData(stationId, parsedArray) {
+        if (stationId === STOP_KAPPENBERGWEG) kappenbergRaw = parsedArray;
+        if (stationId === STOP_WUERTTEMBERG) wuerttembergRaw = parsedArray;
+
+        if (kappenbergRaw !== null && wuerttembergRaw !== null) {
+            activeCachedDepartures = [...kappenbergRaw, ...wuerttembergRaw];
+            renderDisplay();
         }
     }
 
-    async function fetchStopData(stationId, allowedLines) {
-        // Querying the public national transport data pool directly
-        const url = `https://motis-project.org/api/opnv/trip/departures?stationId=${encodeURIComponent(stationId)}&limit=20`;
-        logDebug(`Polling public transport pool for ID: ${stationId}...`);
+    function updateDashboard() {
+        logDebug("Querying official RMV telemetry streams...");
+        kappenbergRaw = null;
+        wuerttembergRaw = null;
         
-        try {
-            const response = await fetch(url);
-            if (!response.ok) {
-                logDebug(`National Feed Error Status: ${response.status}`);
-                return getSimulationData(stationId, allowedLines);
-            }
-            const data = await response.json();
-            
-            if (!data.departures || data.departures.length === 0) {
-                logDebug(`Zero active runs found in national feed layout.`);
-                return getSimulationData(stationId, allowedLines);
-            }
-
-            logDebug(`Connected successfully! Filtering timeline rows...`);
-
-            return data.departures
-                .filter(dep => {
-                    // Extract line details safely from national string matrix
-                    const lineName = dep.service && dep.service.line ? dep.service.line : "";
-                    const matchesLine = allowedLines.some(l => lineName.includes(l));
-                    if (!matchesLine) return false;
-
-                    const dest = dep.destination ? dep.destination.toLowerCase() : "";
-                    const isOutbound = dest.includes("medenbach") || 
-                                       dest.includes("naurod") || 
-                                       dest.includes("eigenheim") || 
-                                       dest.includes("bierstadt ost");
-                    
-                    return !isOutbound;
-                })
-                .map(dep => {
-                    let cleanLineNum = allowedLines[0];
-                    if (dep.service && dep.service.line) {
-                        cleanLineNum = dep.service.line.replace(/\D/g, '');
-                    }
-
-                    // Handles live delayed time estimation if broadcasted
-                    const targetTime = dep.estimatedTime || dep.scheduledTime;
-
-                    return {
-                        line: cleanLineNum,
-                        destination: dep.destination || "Wiesbaden Center",
-                        origin: stationId === STOP_KAPPENBERGWEG ? "Kappenbergweg" : "Württembergstr.",
-                        targetTime: targetTime
-                    };
-                });
-        } catch (error) {
-            logDebug(`Data Tunnel Exception: ${error.message}`);
-            return getSimulationData(stationId, allowedLines);
+        if (window.AndroidBridge) {
+            // We tell Java to hit the official endpoints natively using your key parameters
+            window.AndroidBridge.fetchTransitData(STOP_KAPPENBERGWEG);
+            window.AndroidBridge.fetchTransitData(STOP_WUERTTEMBERG);
+        } else {
+            logDebug("Bridge link offline. Running simulation mode.");
+            processParsedData(STOP_KAPPENBERGWEG, getSimulationData(STOP_KAPPENBERGWEG, ["21", "22"]));
+            processParsedData(STOP_WUERTTEMBERG, getSimulationData(STOP_WUERTTEMBERG, ["18"]));
         }
     }
 
@@ -272,23 +109,13 @@
         const mockDestinations = { "18": "Wiesbaden Hbf", "21": "Platz d. Deutschen Einheit", "22": "Dernsches Gelände" };
         const results = [];
         const now = new Date();
-
         allowedLines.forEach(line => {
             let offset = line === "18" ? 4 : (line === "21" ? 9 : 14);
-            let timeA = new Date(now.getTime() + offset * 60000);
-            let timeB = new Date(now.getTime() + (offset + 20) * 60000);
-
             results.push({
                 line: line,
                 destination: mockDestinations[line] || "Wiesbaden Mitte",
                 origin: stationId === STOP_KAPPENBERGWEG ? "Kappenbergweg" : "Württembergstr.",
-                targetTime: timeA.toISOString()
-            });
-            results.push({
-                line: line,
-                destination: mockDestinations[line] || "Wiesbaden Mitte",
-                origin: stationId === STOP_KAPPENBERGWEG ? "Kappenbergweg" : "Württembergstr.",
-                targetTime: timeB.toISOString()
+                targetTime: new Date(now.getTime() + offset * 60000).toISOString()
             });
         });
         return results;
@@ -300,11 +127,12 @@
         const now = new Date();
 
         if (activeCachedDepartures.length === 0) {
-            board.innerHTML = `<div class="status-msg">No connections found.</div>`;
+            board.innerHTML = `<div class="status-msg">No inbound buses scheduled in the next hour.</div>`;
             return;
         }
 
         const processedList = activeCachedDepartures.map(bus => {
+            // Calculate absolute difference between destination arrival and current clock ticks
             const diffMs = new Date(bus.targetTime) - now;
             const diffMins = Math.max(0, Math.round(diffMs / 1000 / 60));
             return { ...bus, minutes: diffMins };
@@ -319,25 +147,11 @@
                         <div class="origin-stop">via ${bus.origin}</div>
                     </div>
                 </div>
-                <div class="time-info">
-                    ${bus.minutes === 0 ? "NOW" : bus.minutes + " min"}
-                </div>
+                <div class="time-info">${bus.minutes === 0 ? "NOW" : bus.minutes + " min"}</div>
             </div>
         `).join('');
 
         timeLabel.innerText = `Last updated: ${now.toLocaleTimeString('de-DE')}`;
-    }
-
-    async function updateDashboard() {
-        logDebug("Syncing public transit data pool...");
-        
-        const kappenbergTask = fetchStopData(STOP_KAPPENBERGWEG, ["21", "22"]);
-        const wuerttembergTask = fetchStopData(STOP_WUERTTEMBERG, ["18"]);
-        
-        const [kappenbergResults, wuerttembergResults] = await Promise.all([kappenbergTask, wuerttembergTask]);
-        
-        activeCachedDepartures = [...kappenbergResults, ...wuerttembergResults];
-        renderDisplay();
     }
 
     updateDashboard();
