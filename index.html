@@ -142,7 +142,7 @@
             font-style: italic;
             padding: 20px;
         }
-        
+
         .log-section {
             margin-top: 20px;
             display: none;
@@ -223,21 +223,45 @@
             }
 
             const allowedLines = stationId === STOP_KAPPENBERGWEG ? ["21", "22"] : ["18"];
-            
+
             const parsed = data.Departure
                 .filter(dep => {
-                    let lineName = (dep.Product && dep.Product.number) ? dep.Product.number : "";
-                    const matchesLine = allowedLines.some(l => lineName.trim() === l);
+                    // BROAD KEY EXTRACTION: Check all common RMV HAFAS line properties
+                    let lineStr = "";
+                    if (dep.Product) {
+                        lineStr = dep.Product.line || dep.Product.number || dep.Product.name || "";
+                    }
+                    if (!lineStr && dep.name) {
+                        lineStr = dep.name;
+                    }
+
+                    // Clean up spacing and symbols (e.g., "Bus 21" becomes "21")
+                    const cleanLine = lineStr.replace(/\D/g, '').trim();
+
+                    // Cross-check if the stripped numeric representation matches our active filter
+                    const matchesLine = allowedLines.some(l => cleanLine === l || lineStr.includes(l));
                     if (!matchesLine) return false;
 
+                    // Filter out outbound routes heading away from downtown
                     const dest = dep.direction ? dep.direction.toLowerCase() : "";
                     return !(dest.includes("medenbach") || dest.includes("naurod") || dest.includes("eigenheim") || dest.includes("bierstadt ost"));
                 })
                 .map(dep => {
+                    // Safely reconstruct the display badge number
+                    let cleanLineNum = allowedLines[0];
+                    if (dep.Product && dep.Product.line) {
+                        cleanLineNum = dep.Product.line.trim();
+                    } else if (dep.Product && dep.Product.number) {
+                        cleanLineNum = dep.Product.number.trim();
+                    } else if (dep.name) {
+                        cleanLineNum = dep.name.replace(/\D/g, '').trim();
+                    }
+
                     const targetDate = dep.rtDate ? dep.rtDate : dep.date;
                     const targetTime = dep.rtTime ? dep.rtTime : dep.time;
+
                     return {
-                        line: dep.Product.number.trim(),
+                        line: cleanLineNum,
                         destination: dep.direction || "Wiesbaden Center",
                         origin: stationId === STOP_KAPPENBERGWEG ? "Kappenbergweg" : "Württembergstr.",
                         targetTime: `${targetDate}T${targetTime}`
@@ -265,7 +289,7 @@
         logDebug("Verifying system communication pipeline...");
         kappenbergRaw = null;
         wuerttembergRaw = null;
-        
+
         // FIXED SAFETY GUARD: Prevents computer browser crash if running outside Android environment
         if (typeof window.AndroidBridge !== 'undefined' && window.AndroidBridge) {
             window.AndroidBridge.fetchTransitData(STOP_KAPPENBERGWEG);
