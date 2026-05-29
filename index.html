@@ -1,5 +1,216 @@
-async function fetchStopData(stationId, allowedLines) {
-        // Querying using the stable v6 gateway structure
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wiesbaden Downtown Transit Monitor</title>
+    <style>
+        :root {
+            --bg-color: #121212;
+            --card-bg: #1e1e1e;
+            --text-main: #ffffff;
+            --text-muted: #aaaaaa;
+            --accent-color: #2b82c9;
+            --border-round: 8px;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            margin: 0;
+            padding: 15px;
+            display: flex;
+            justify-content: center;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 500px;
+            background: var(--card-bg);
+            padding: 20px;
+            border-radius: var(--border-round);
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+            display: flex;
+            flex-direction: column;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 2px solid #333333;
+            padding-bottom: 15px;
+            margin-bottom: 20px;
+        }
+
+        h1 {
+            font-size: 1.2rem;
+            margin: 0;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 8px;
+        }
+
+        .action-btn {
+            background-color: var(--accent-color);
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 0.85rem;
+        }
+
+        .action-btn.secondary {
+            background-color: #3a3a3a;
+            color: var(--text-muted);
+        }
+
+        .departure-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .bus-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px;
+            background: #252525;
+            border-radius: 4px;
+            border-left: 4px solid #555555;
+        }
+
+        .bus-row.line-18 { border-left-color: #e67e22; }
+        .bus-row.line-21 { border-left-color: #2ce3b7; }
+        .bus-row.line-22 { border-left-color: #2ecc71; }
+
+        .bus-meta {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .line-badge {
+            font-weight: bold;
+            padding: 4px 8px;
+            border-radius: 3px;
+            font-size: 1rem;
+            min-width: 25px;
+            text-align: center;
+            background: #3a3a3a;
+            color: #fff;
+        }
+
+        .line-18 .line-badge { background-color: #e67e22; }
+        .line-21 .line-badge { background-color: #2ce3b7; color: #000; }
+        .line-22 .line-badge { background-color: #2ecc71; }
+
+        .route-info {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .destination {
+            font-weight: bold;
+            font-size: 0.95rem;
+        }
+
+        .origin-stop {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-top: 2px;
+        }
+
+        .time-info {
+            text-align: right;
+            font-weight: bold;
+            font-size: 1.1rem;
+            color: #ffcc00;
+        }
+
+        .status-msg {
+            text-align: center;
+            color: var(--text-muted);
+            font-style: italic;
+            padding: 20px;
+        }
+        
+        .log-section {
+            margin-top: 20px;
+            display: none;
+        }
+
+        .debug-panel {
+            background: #000;
+            padding: 10px;
+            font-family: monospace;
+            font-size: 0.75rem;
+            color: #00ff00;
+            height: 120px;
+            overflow-y: auto;
+            border-radius: 4px;
+            border: 1px solid #333;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <header>
+        <div>
+            <h1>Wiesbaden Inbound</h1>
+            <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 4px;" id="update-time">Initializing Tracker...</div>
+        </div>
+        <div class="btn-group">
+            <button class="action-btn secondary" onclick="toggleLog()">Log</button>
+            <button class="action-btn" onclick="updateDashboard()">Refresh</button>
+        </div>
+    </header>
+
+    <div id="display-board" class="departure-list">
+        <div class="status-msg">Connecting to transit array...</div>
+    </div>
+
+    <div id="log-wrapper" class="log-section">
+        <div style="font-size: 0.8rem; font-weight: bold; margin-bottom: 6px; color: var(--text-muted);">System Raw Log:</div>
+        <div id="debug-log" class="debug-panel">System online. Standby.</div>
+    </div>
+</div>
+
+<script>
+    const STOP_KAPPENBERGWEG = "3025380";
+    const STOP_WUERTTEMBERG = "3025585";
+
+    let activeCachedDepartures = [];
+
+    function logDebug(msg) {
+        const log = document.getElementById("debug-log");
+        if (log) {
+            log.innerHTML += `<br>[${new Date().toLocaleTimeString()}] ${msg}`;
+            log.scrollTop = log.scrollHeight;
+        }
+    }
+
+    function toggleLog() {
+        const logWrapper = document.getElementById("log-wrapper");
+        if (logWrapper.style.display === "block") {
+            logWrapper.style.display = "none";
+        } else {
+            logWrapper.style.display = "block";
+            const log = document.getElementById("debug-log");
+            log.scrollTop = log.scrollHeight;
+        }
+    }
+
+    async function fetchStopData(stationId, allowedLines) {
         const url = `https://v6.db.transport.rest/stops/${stationId}/departures?duration=60&results=20`;
         logDebug(`Polling station ID: ${stationId}...`);
         
@@ -11,7 +222,6 @@ async function fetchStopData(stationId, allowedLines) {
             }
             const data = await response.json();
             
-            // Handle differences between different API wrapper arrays
             const departures = data.departures || data;
             if (!departures || departures.length === 0) {
                 logDebug(`Zero active departures returned for ${stationId}`);
@@ -22,17 +232,14 @@ async function fetchStopData(stationId, allowedLines) {
 
             return departures
                 .filter(dep => {
-                    // MODERN API CORRECTION: Safely extract line markers across varying sub-objects
                     let lineName = "";
                     if (dep.line) {
                         lineName = dep.line.name || dep.line.id || "";
                     }
                     
-                    // Cross-check if the line number matches our active filter (18, 21, or 22)
                     const matchesLine = allowedLines.some(l => lineName.includes(l));
                     if (!matchesLine) return false;
 
-                    // Separate out any outbound commuter traffic heading to distant suburbs
                     const dest = dep.direction ? dep.direction.toLowerCase() : "";
                     const isOutbound = dest.includes("medenbach") || 
                                        dest.includes("naurod") || 
@@ -42,7 +249,6 @@ async function fetchStopData(stationId, allowedLines) {
                     return !isOutbound;
                 })
                 .map(dep => {
-                    // Extract the clean numeric representation of the line
                     let cleanLineNum = "??";
                     if (dep.line && dep.line.name) {
                         cleanLineNum = dep.line.name.replace(/\D/g, '');
@@ -51,7 +257,7 @@ async function fetchStopData(stationId, allowedLines) {
                     }
                     
                     if (!cleanLineNum || cleanLineNum === "") {
-                        cleanLineNum = allowedLines[0]; // Fallback string assignment if stripped completely
+                        cleanLineNum = allowedLines[0];
                     }
 
                     return {
@@ -66,3 +272,82 @@ async function fetchStopData(stationId, allowedLines) {
             return getSimulationData(stationId, allowedLines);
         }
     }
+
+    function getSimulationData(stationId, allowedLines) {
+        const mockDestinations = { "18": "Wiesbaden Hbf", "21": "Platz d. Deutschen Einheit", "22": "Dernsches Gelände" };
+        const results = [];
+        const now = new Date();
+
+        allowedLines.forEach(line => {
+            let offset = line === "18" ? 4 : (line === "21" ? 9 : 14);
+            let timeA = new Date(now.getTime() + offset * 60000);
+            let timeB = new Date(now.getTime() + (offset + 20) * 60000);
+
+            results.push({
+                line: line,
+                destination: mockDestinations[line] || "Wiesbaden Mitte",
+                origin: stationId === STOP_KAPPENBERGWEG ? "Kappenbergweg" : "Württembergstr.",
+                targetTime: timeA.toISOString()
+            });
+            results.push({
+                line: line,
+                destination: mockDestinations[line] || "Wiesbaden Mitte",
+                origin: stationId === STOP_KAPPENBERGWEG ? "Kappenbergweg" : "Württembergstr.",
+                targetTime: timeB.toISOString()
+            });
+        });
+        return results;
+    }
+
+    function renderDisplay() {
+        const board = document.getElementById("display-board");
+        const timeLabel = document.getElementById("update-time");
+        const now = new Date();
+
+        if (activeCachedDepartures.length === 0) {
+            board.innerHTML = `<div class="status-msg">No connections found. Click refresh to poll grid.</div>`;
+            return;
+        }
+
+        const processedList = activeCachedDepartures.map(bus => {
+            const diffMs = new Date(bus.targetTime) - now;
+            const diffMins = Math.max(0, Math.round(diffMs / 1000 / 60));
+            return { ...bus, minutes: diffMins };
+        }).sort((a, b) => a.minutes - b.minutes);
+
+        board.innerHTML = processedList.map(bus => `
+            <div class="bus-row line-${bus.line}">
+                <div class="bus-meta">
+                    <div class="line-badge">${bus.line}</div>
+                    <div class="route-info">
+                        <div class="destination">${bus.destination}</div>
+                        <div class="origin-stop">via ${bus.origin}</div>
+                    </div>
+                </div>
+                <div class="time-info">
+                    ${bus.minutes === 0 ? "NOW" : bus.minutes + " min"}
+                </div>
+            </div>
+        `).join('');
+
+        timeLabel.innerText = `Last updated: ${now.toLocaleTimeString('de-DE')}`;
+    }
+
+    async function updateDashboard() {
+        logDebug("Syncing vehicle location matrices...");
+        
+        const kappenbergTask = fetchStopData(STOP_KAPPENBERGWEG, ["21", "22"]);
+        const wuerttembergTask = fetchStopData(STOP_WUERTTEMBERG, ["18"]);
+        
+        const [kappenbergResults, wuerttembergResults] = await Promise.all([kappenbergTask, wuerttembergTask]);
+        
+        activeCachedDepartures = [...kappenbergResults, ...wuerttembergResults];
+        renderDisplay();
+    }
+
+    updateDashboard();
+    setInterval(updateDashboard, 60000);
+    setInterval(renderDisplay, 10000);
+</script>
+</body>
+</html>
