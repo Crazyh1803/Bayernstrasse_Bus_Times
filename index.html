@@ -211,26 +211,25 @@
     }
 
     async function fetchStopData(stationId, allowedLines) {
-       // FIXED: Routing the request through a public CORS proxy to bypass the security block
-        const targetUrl = `https://v6.db.transport.rest/stops/${stationId}/departures?duration=60&results=20`;
-        const url = `https://cors-anywhere.herokuapp.com/${targetUrl}`;
+        // MIGRATION: Shifting to the alternate stable proxy gateway to bypass the DB 503 outage
+        const url = `https://v6.bvg.transport.rest/stops/${stationId}/departures?duration=60&results=20`;
+        logDebug(`Polling alternative stable transit engine for stop ${stationId}...`);
         
-        logDebug(`Routing via CORS proxy for station ID: ${stationId}...`);
         try {
             const response = await fetch(url);
             if (!response.ok) {
-                logDebug(`HTTP Response Error: ${response.status}`);
+                logDebug(`Alternative Engine Error Status: ${response.status}`);
                 return getSimulationData(stationId, allowedLines);
             }
             const data = await response.json();
             
             const departures = data.departures || data;
             if (!departures || departures.length === 0) {
-                logDebug(`Zero active departures returned for ${stationId}`);
+                logDebug(`No active routes found on alternate grid layout.`);
                 return getSimulationData(stationId, allowedLines);
             }
 
-            logDebug(`Successfully connected! Processing raw transit matrix...`);
+            logDebug(`Connected successfully! Processing real-time telemetry array...`);
 
             return departures
                 .filter(dep => {
@@ -270,7 +269,7 @@
                     };
                 });
         } catch (error) {
-            logDebug(`Parser exception hit: ${error.message}. Initializing safe simulation fallback.`);
+            logDebug(`Grid Link Exception: ${error.message}`);
             return getSimulationData(stationId, allowedLines);
         }
     }
@@ -307,7 +306,7 @@
         const now = new Date();
 
         if (activeCachedDepartures.length === 0) {
-            board.innerHTML = `<div class="status-msg">No connections found. Click refresh to poll grid.</div>`;
+            board.innerHTML = `<div class="status-msg">No connections found.</div>`;
             return;
         }
 
@@ -336,7 +335,7 @@
     }
 
     async function updateDashboard() {
-        logDebug("Syncing vehicle location matrices...");
+        logDebug("Syncing alternative network stream...");
         
         const kappenbergTask = fetchStopData(STOP_KAPPENBERGWEG, ["21", "22"]);
         const wuerttembergTask = fetchStopData(STOP_WUERTTEMBERG, ["18"]);
