@@ -213,7 +213,7 @@
     async function fetchStopData(stationId, allowedLines) {
        // FIXED: Routing the request through a public CORS proxy to bypass the security block
         const targetUrl = `https://v6.db.transport.rest/stops/${stationId}/departures?duration=60&results=20`;
-        const url = `https://cors-anywhere.herokuapp.com/${targetUrl}`;
+        const url = `https://cors-anywhere.com/${targetUrl}`;
         
         logDebug(`Routing via CORS proxy for station ID: ${stationId}...`);
         try {
