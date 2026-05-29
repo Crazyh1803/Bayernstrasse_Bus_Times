@@ -186,8 +186,9 @@
 </div>
 
 <script>
-    const STOP_KAPPENBERGWEG = "3025380";
-    const STOP_WUERTTEMBERG = "3025585";
+    // Station IDs mapped specifically to the national OpenStreetMap index
+    const STOP_KAPPENBERGWEG = "de:06414:5380"; 
+    const STOP_WUERTTEMBERG = "de:06414:5585";
 
     let activeCachedDepartures = [];
 
@@ -211,37 +212,33 @@
     }
 
     async function fetchStopData(stationId, allowedLines) {
-        // MIGRATION: Shifting to the alternate stable proxy gateway to bypass the DB 503 outage
-        const url = `https://v6.bvg.transport.rest/stops/${stationId}/departures?duration=60&results=20`;
-        logDebug(`Polling alternative stable transit engine for stop ${stationId}...`);
+        // Querying the public national transport data pool directly
+        const url = `https://motis-project.org/api/opnv/trip/departures?stationId=${encodeURIComponent(stationId)}&limit=20`;
+        logDebug(`Polling public transport pool for ID: ${stationId}...`);
         
         try {
             const response = await fetch(url);
             if (!response.ok) {
-                logDebug(`Alternative Engine Error Status: ${response.status}`);
+                logDebug(`National Feed Error Status: ${response.status}`);
                 return getSimulationData(stationId, allowedLines);
             }
             const data = await response.json();
             
-            const departures = data.departures || data;
-            if (!departures || departures.length === 0) {
-                logDebug(`No active routes found on alternate grid layout.`);
+            if (!data.departures || data.departures.length === 0) {
+                logDebug(`Zero active runs found in national feed layout.`);
                 return getSimulationData(stationId, allowedLines);
             }
 
-            logDebug(`Connected successfully! Processing real-time telemetry array...`);
+            logDebug(`Connected successfully! Filtering timeline rows...`);
 
-            return departures
+            return data.departures
                 .filter(dep => {
-                    let lineName = "";
-                    if (dep.line) {
-                        lineName = dep.line.name || dep.line.id || "";
-                    }
-                    
+                    // Extract line details safely from national string matrix
+                    const lineName = dep.service && dep.service.line ? dep.service.line : "";
                     const matchesLine = allowedLines.some(l => lineName.includes(l));
                     if (!matchesLine) return false;
 
-                    const dest = dep.direction ? dep.direction.toLowerCase() : "";
+                    const dest = dep.destination ? dep.destination.toLowerCase() : "";
                     const isOutbound = dest.includes("medenbach") || 
                                        dest.includes("naurod") || 
                                        dest.includes("eigenheim") || 
@@ -250,26 +247,23 @@
                     return !isOutbound;
                 })
                 .map(dep => {
-                    let cleanLineNum = "??";
-                    if (dep.line && dep.line.name) {
-                        cleanLineNum = dep.line.name.replace(/\D/g, '');
-                    } else if (dep.line && dep.line.id) {
-                        cleanLineNum = dep.line.id.replace(/\D/g, '');
+                    let cleanLineNum = allowedLines[0];
+                    if (dep.service && dep.service.line) {
+                        cleanLineNum = dep.service.line.replace(/\D/g, '');
                     }
-                    
-                    if (!cleanLineNum || cleanLineNum === "") {
-                        cleanLineNum = allowedLines[0];
-                    }
+
+                    // Handles live delayed time estimation if broadcasted
+                    const targetTime = dep.estimatedTime || dep.scheduledTime;
 
                     return {
                         line: cleanLineNum,
-                        destination: dep.direction || "Wiesbaden Center",
+                        destination: dep.destination || "Wiesbaden Center",
                         origin: stationId === STOP_KAPPENBERGWEG ? "Kappenbergweg" : "Württembergstr.",
-                        targetTime: dep.when || dep.plannedWhen
+                        targetTime: targetTime
                     };
                 });
         } catch (error) {
-            logDebug(`Grid Link Exception: ${error.message}`);
+            logDebug(`Data Tunnel Exception: ${error.message}`);
             return getSimulationData(stationId, allowedLines);
         }
     }
@@ -335,7 +329,7 @@
     }
 
     async function updateDashboard() {
-        logDebug("Syncing alternative network stream...");
+        logDebug("Syncing public transit data pool...");
         
         const kappenbergTask = fetchStopData(STOP_KAPPENBERGWEG, ["21", "22"]);
         const wuerttembergTask = fetchStopData(STOP_WUERTTEMBERG, ["18"]);
@@ -350,5 +344,3 @@
     setInterval(updateDashboard, 60000);
     setInterval(renderDisplay, 10000);
 </script>
-</body>
-</html>
