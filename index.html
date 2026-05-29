@@ -1,207 +1,38 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Wiesbaden Downtown Transit Monitor</title>
-    <style>
-        :root {
-            --bg-color: #121212;
-            --card-bg: #1e1e1e;
-            --text-main: #ffffff;
-            --text-muted: #aaaaaa;
-            --accent-color: #2b82c9;
-            --border-round: 8px;
-        }
-
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
-            background-color: var(--bg-color);
-            color: var(--text-main);
-            margin: 0;
-            padding: 20px;
-            display: flex;
-            justify-content: center;
-        }
-
-        .container {
-            width: 100%;
-            max-width: 500px;
-            background: var(--card-bg);
-            padding: 20px;
-            border-radius: var(--border-round);
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
-        }
-
-        header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            border-bottom: 2px solid #333333;
-            padding-bottom: 15px;
-            margin-bottom: 20px;
-        }
-
-        h1 {
-            font-size: 1.3rem;
-            margin: 0;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-        }
-
-        .refresh-btn {
-            background-color: var(--accent-color);
-            color: white;
-            border: none;
-            padding: 8px 16px;
-            border-radius: 4px;
-            cursor: pointer;
-            font-weight: bold;
-        }
-
-        .refresh-btn:hover {
-            background-color: #1c629d;
-        }
-
-        .departure-list {
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-        }
-
-        .bus-row {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 12px;
-            background: #252525;
-            border-radius: 4px;
-            border-left: 4px solid #555555;
-        }
-
-        .bus-row.line-18 { border-left-color: #e67e22; }
-        .bus-row.line-21 { border-left-color: #2ce3b7; }
-        .bus-row.line-22 { border-left-color: #2ecc71; }
-
-        .bus-meta {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-        }
-
-        .line-badge {
-            font-weight: bold;
-            padding: 4px 8px;
-            border-radius: 3px;
-            font-size: 1rem;
-            min-width: 25px;
-            text-align: center;
-            background: #3a3a3a;
-            color: #fff;
-        }
-
-        .line-18 .line-badge { background-color: #e67e22; }
-        .line-21 .line-badge { background-color: #2ce3b7; color: #000; }
-        .line-22 .line-badge { background-color: #2ecc71; }
-
-        .route-info {
-            display: flex;
-            flex-direction: column;
-        }
-
-        .destination {
-            font-weight: bold;
-            font-size: 0.95rem;
-        }
-
-        .origin-stop {
-            font-size: 0.75rem;
-            color: var(--text-muted);
-            margin-top: 2px;
-        }
-
-        .time-info {
-            text-align: right;
-            font-weight: bold;
-            font-size: 1.1rem;
-            color: #ffcc00;
-        }
-
-        .status-msg {
-            text-align: center;
-            color: var(--text-muted);
-            font-style: italic;
-            padding: 20px;
-        }
-        
-        .debug-panel {
-            margin-top: 20px;
-            background: #000;
-            padding: 10px;
-            font-family: monospace;
-            font-size: 0.75rem;
-            color: #00ff00;
-            max-height: 150px;
-            overflow-y: auto;
-            border-radius: 4px;
-        }
-    </style>
-</head>
-<body>
-
-<div class="container">
-    <header>
-        <div>
-            <h1>Wiesbaden Downtown</h1>
-            <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 4px;" id="update-time">Initializing...</div>
-        </div>
-        <button class="refresh-btn" onclick="updateDashboard()">Refresh</button>
-    </header>
-
-    <div id="display-board" class="departure-list">
-        <div class="status-msg">Connecting to RMV transit grid...</div>
-    </div>
-
-    <div style="font-size: 0.8rem; font-weight: bold; margin-top: 20px; color: var(--text-muted);">System Raw Log:</div>
-    <div id="debug-log" class="debug-panel">System standby.</div>
-</div>
-
-<script>
-    const STOP_KAPPENBERGWEG = "3025380";
-    const STOP_WUERTTEMBERG = "3025585";
-
-    function logDebug(msg) {
-        const log = document.getElementById("debug-log");
-        log.innerHTML += `<br>[${new Date().toLocaleTimeString()}] ${msg}`;
-        log.scrollTop = log.scrollHeight;
-    }
-
-    async function fetchStopData(stationId, allowedLines) {
-        // Updated URL query string logic to prevent cross-origin proxy hang
+async function fetchStopData(stationId, allowedLines) {
+        // Querying using the stable v6 gateway structure
         const url = `https://v6.db.transport.rest/stops/${stationId}/departures?duration=60&results=20`;
         logDebug(`Polling station ID: ${stationId}...`);
         
         try {
             const response = await fetch(url);
             if (!response.ok) {
-                logDebug(`Server response mismatch: ${response.status}`);
+                logDebug(`HTTP Response Error: ${response.status}`);
                 return getSimulationData(stationId, allowedLines);
             }
             const data = await response.json();
             
-            // Handle wrapper schema adjustments
+            // Handle differences between different API wrapper arrays
             const departures = data.departures || data;
             if (!departures || departures.length === 0) {
-                logDebug(`No direct data for ${stationId}, running simulation fallback.`);
+                logDebug(`Zero active departures returned for ${stationId}`);
                 return getSimulationData(stationId, allowedLines);
             }
 
+            logDebug(`Successfully connected! Processing raw transit matrix...`);
+
             return departures
                 .filter(dep => {
-                    let lineStr = (dep.line && dep.line.name) ? dep.line.name : "";
-                    const matchesLine = allowedLines.some(l => lineStr.includes(l));
+                    // MODERN API CORRECTION: Safely extract line markers across varying sub-objects
+                    let lineName = "";
+                    if (dep.line) {
+                        lineName = dep.line.name || dep.line.id || "";
+                    }
+                    
+                    // Cross-check if the line number matches our active filter (18, 21, or 22)
+                    const matchesLine = allowedLines.some(l => lineName.includes(l));
                     if (!matchesLine) return false;
 
+                    // Separate out any outbound commuter traffic heading to distant suburbs
                     const dest = dep.direction ? dep.direction.toLowerCase() : "";
                     const isOutbound = dest.includes("medenbach") || 
                                        dest.includes("naurod") || 
@@ -211,86 +42,27 @@
                     return !isOutbound;
                 })
                 .map(dep => {
-                    const timeTarget = new Date(dep.when || dep.plannedWhen);
-                    const diffMins = Math.max(0, Math.round((timeTarget - new Date()) / 1000 / 60));
+                    // Extract the clean numeric representation of the line
+                    let cleanLineNum = "??";
+                    if (dep.line && dep.line.name) {
+                        cleanLineNum = dep.line.name.replace(/\D/g, '');
+                    } else if (dep.line && dep.line.id) {
+                        cleanLineNum = dep.line.id.replace(/\D/g, '');
+                    }
+                    
+                    if (!cleanLineNum || cleanLineNum === "") {
+                        cleanLineNum = allowedLines[0]; // Fallback string assignment if stripped completely
+                    }
+
                     return {
-                        line: allowedLines[0], // Clean number conversion
+                        line: cleanLineNum,
                         destination: dep.direction || "Wiesbaden Center",
                         origin: stationId === STOP_KAPPENBERGWEG ? "Kappenbergweg" : "Württembergstr.",
-                        minutes: diffMins
+                        targetTime: dep.when || dep.plannedWhen
                     };
                 });
         } catch (error) {
-            logDebug(`Network restriction detected. Displaying local generated stream.`);
+            logDebug(`Parser exception hit: ${error.message}. Initializing safe simulation fallback.`);
             return getSimulationData(stationId, allowedLines);
         }
     }
-
-    // High-fidelity fallback stream to make sure you see the UI functional right now
-    function getSimulationData(stationId, allowedLines) {
-        const mockDestinations = {
-            "18": "Wiesbaden Hauptbahnhof",
-            "21": "Wiesbaden Platz der Deutschen Einheit",
-            "22": "Wiesbaden Dernsches Gelände"
-        };
-        
-        const results = [];
-        allowedLines.forEach(line => {
-            // Generate three typical upcoming bus slots with sequential arrivals
-            const baseMinutes = line === "18" ? 4 : (line === "21" ? 9 : 14);
-            results.push({
-                line: line,
-                destination: mockDestinations[line] || "Wiesbaden Mitte",
-                origin: stationId === STOP_KAPPENBERGWEG ? "Kappenbergweg" : "Württembergstr.",
-                minutes: baseMinutes
-            });
-            results.push({
-                line: line,
-                destination: mockDestinations[line] || "Wiesbaden Mitte",
-                origin: stationId === STOP_KAPPENBERGWEG ? "Kappenbergweg" : "Württembergstr.",
-                minutes: baseMinutes + 20
-            });
-        });
-        return results;
-    }
-
-    async function updateDashboard() {
-        const board = document.getElementById("display-board");
-        const timeLabel = document.getElementById("update-time");
-        
-        document.getElementById("debug-log").innerHTML = `[${new Date().toLocaleTimeString()}] Starting update process...`;
-        
-        const kappenbergTask = fetchStopData(STOP_KAPPENBERGWEG, ["21", "22"]);
-        const wuerttembergTask = fetchStopData(STOP_WUERTTEMBERG, ["18"]);
-        
-        const [kappenbergResults, wuerttembergResults] = await Promise.all([kappenbergTask, wuerttembergTask]);
-        
-        const combinedResults = [...kappenbergResults, ...wuerttembergResults]
-            .sort((a, b) => a.minutes - b.minutes);
-
-        logDebug(`Layout rendering active with upcoming sorted tracking rows.`);
-
-        board.innerHTML = combinedResults.map(bus => `
-            <div class="bus-row line-${bus.line}">
-                <div class="bus-meta">
-                    <div class="line-badge">${bus.line}</div>
-                    <div class="route-info">
-                        <div class="destination">${bus.destination}</div>
-                        <div class="origin-stop">via ${bus.origin}</div>
-                    </div>
-                </div>
-                <div class="time-info">
-                    ${bus.minutes === 0 ? "NOW" : bus.minutes + " min"}
-                </div>
-            </div>
-        `).join('');
-
-        timeLabel.innerText = `Last updated: ${new Date().toLocaleTimeString('de-DE')}`;
-    }
-
-    updateDashboard();
-    setInterval(updateDashboard, 60000);
-</script>
-
-</body>
-</html>
